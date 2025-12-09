@@ -4,36 +4,46 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/src/app/api/auth/[...nextauth]/route";
 import { PrismaClient } from "@prisma/client";
 import { redirect } from "next/navigation";
-import { FaBoxOpen, FaCheckCircle, FaCreditCard, FaUserCircle } from "react-icons/fa";
+import { FaBoxOpen, FaCheckCircle, FaCreditCard, FaMapMarkerAlt, FaUserCircle, FaSave } from "react-icons/fa";
+import AddressForm from "@/src/components/AddressForm"; 
 
 const prisma = new PrismaClient();
 
-export default async function PerfilPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
+// Definir type para searchParams
+type SearchParams = Promise<{ [key: string]: string | string[] | undefined }>;
+
+export default async function PerfilPage(props: {
+  searchParams: SearchParams
 }) {
   const session = await getServerSession(authOptions);
   
-  // 1. Seguridad: Si no hay usuario, chao
   if (!session?.user?.email) {
     redirect("/auth/login");
   }
 
-  // 2. Obtener datos reales de la DB (incluyendo pedidos)
+  // Verificar parámetros URL (retorno de pago)
+  const params = await props.searchParams;
+  const status = typeof params.status === 'string' ? params.status : undefined;
+  const orderId = typeof params.orderId === 'string' ? params.orderId : undefined;
+
+  // 1. CONFIRMAR PEDIDO SI VIENE DE PAGO
+  if (status === 'success' && orderId) {
+    await prisma.order.update({
+        where: { id: Number(orderId) },
+        data: { status: 'pagado' }
+    });
+  }
+
+  // 2. OBTENER DATOS (Ahora traemos address y phone)
   const user = await prisma.user.findUnique({
     where: { email: session.user.email },
     include: { 
         orders: {
             orderBy: { createdAt: 'desc' },
-            include: { items: true }
+            take: 10
         }
     }
   });
-
-  // 3. Verificar si viene volviendo de un pago exitoso
-  const params = await searchParams;
-  const showSuccessMessage = params.status === 'success';
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans">
@@ -41,108 +51,118 @@ export default async function PerfilPage({
 
       <main className="container mx-auto px-4 py-10">
         
-        {/* Mensaje de Éxito al volver de Mercado Pago */}
-        {showSuccessMessage && (
-            <div className="mb-8 bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative flex items-center gap-3">
-                <FaCheckCircle size={24} />
+        {/* Notificación de éxito */}
+        {status === 'success' && (
+            <div className="mb-8 bg-green-100 border border-green-400 text-green-700 px-6 py-4 rounded-xl relative flex items-center gap-4 shadow-sm animate-bounce">
+                <FaCheckCircle size={28} />
                 <div>
-                    <strong className="font-bold">¡Pago Exitoso! </strong>
-                    <span className="block sm:inline">Tu suscripción/pedido ha sido procesado correctamente.</span>
+                    <h3 className="font-bold text-lg">¡Pago Recibido con Éxito!</h3>
+                    <p>Tu pedido ha sido confirmado. Te hemos enviado un correo con los detalles.</p>
                 </div>
             </div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
             
-            {/* COLUMNA IZQUIERDA: Tarjeta de Usuario */}
-            <div className="lg:col-span-1">
-                <div className="bg-white rounded-2xl shadow-sm p-6 text-center border border-gray-100">
-                    <div className="relative w-32 h-32 mx-auto mb-4">
+            {/* COLUMNA IZQUIERDA (Perfil y Dirección) - Ocupa 4 columnas */}
+            <div className="lg:col-span-4 space-y-6">
+                
+                {/* Tarjeta Usuario */}
+                <div className="bg-white rounded-2xl shadow-sm p-8 text-center border border-gray-100">
+                    <div className="relative w-28 h-28 mx-auto mb-4">
                         {user?.image ? (
-                            <img src={user.image} alt="Perfil" className="w-full h-full rounded-full object-cover border-4 border-amber-100" />
+                            <img src={user.image} alt="Perfil" className="w-full h-full rounded-full object-cover border-4 border-amber-50 shadow-sm" />
                         ) : (
-                            <FaUserCircle className="w-full h-full text-gray-300" />
+                            <div className="w-full h-full rounded-full bg-gradient-to-br from-amber-100 to-orange-200 flex items-center justify-center text-amber-800 text-5xl font-bold">
+                                {user?.name?.charAt(0) || "U"}
+                            </div>
                         )}
-                        <span className="absolute bottom-2 right-2 bg-green-500 w-5 h-5 rounded-full border-4 border-white"></span>
+                        <span className="absolute bottom-1 right-1 bg-green-500 w-6 h-6 rounded-full border-4 border-white"></span>
                     </div>
                     <h2 className="text-2xl font-bold text-gray-800">{user?.name}</h2>
-                    <p className="text-gray-500 mb-6">{user?.email}</p>
+                    <p className="text-gray-500 mb-4">{user?.email}</p>
                     
-                    <div className="bg-amber-50 rounded-xl p-4 text-left">
-                        <p className="text-xs font-bold text-amber-800 uppercase mb-1">Rol de Cuenta</p>
-                        <p className="text-gray-700 capitalize">{user?.role}</p>
+                    {/* Rol Bonito */}
+                    <div className="inline-block px-4 py-1 bg-amber-50 text-amber-800 rounded-full text-xs font-bold uppercase tracking-wide">
+                        {user?.role === 'admin' ? 'Administrador' : 'Miembro del Club 🌿'}
                     </div>
                 </div>
+
+                {/* Formulario de Dirección (Componente Cliente) */}
+                <div className="bg-white rounded-2xl shadow-sm p-6 border border-gray-100">
+                    <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2 border-b pb-2">
+                        <FaMapMarkerAlt className="text-amber-600"/> Datos de Envío
+                    </h3>
+                    {/* Usamos el componente cliente aquí para manejar el formulario */}
+                    <AddressForm 
+                        initialAddress={user?.address || ""} 
+                        initialPhone={user?.phone || ""} 
+                    />
+                </div>
+
+                {/* Método de Pago (Simulado Visualmente) */}
+                <div className="bg-white rounded-2xl shadow-sm p-6 border border-gray-100">
+                    <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+                        <FaCreditCard className="text-amber-600"/> Tarjeta Guardada
+                    </h3>
+                    <div className="flex items-center justify-between bg-gray-50 p-4 rounded-xl border border-gray-200">
+                        <div className="flex items-center gap-3">
+                            <div className="h-8 w-12 bg-blue-900 rounded flex items-center justify-center text-white text-xs font-bold italic">VISA</div>
+                            <div className="text-sm font-mono text-gray-600">•••• 4242</div>
+                        </div>
+                        <span className="text-green-600 text-xs font-bold bg-green-50 px-2 py-1 rounded">Activa</span>
+                    </div>
+                    <p className="text-xs text-gray-400 mt-3">Usada para tus suscripciones mensuales.</p>
+                </div>
+
             </div>
 
-            {/* COLUMNA DERECHA: Suscripción y Pedidos */}
-            <div className="lg:col-span-2 space-y-8">
-                
-                {/* 1. Gestión de Suscripción (Modelo SaaS) */}
-                <div className="bg-white rounded-2xl shadow-sm p-8 border border-gray-100 relative overflow-hidden">
-                    <div className="absolute top-0 right-0 bg-amber-600 text-white text-xs font-bold px-3 py-1 rounded-bl-xl">
-                        PLAN ACTIVO
+            {/* COLUMNA DERECHA (Historial) - Ocupa 8 columnas */}
+            <div className="lg:col-span-8">
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                    <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                        <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                            <FaBoxOpen className="text-amber-600" /> Historial de Pedidos
+                        </h3>
+                        <span className="text-sm text-gray-500">{user?.orders.length || 0} pedidos totales</span>
                     </div>
-                    <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-                        <FaCreditCard className="text-amber-600" /> Mi Suscripción
-                    </h3>
-                    
-                    <div className="flex flex-col sm:flex-row justify-between items-center bg-gray-50 p-4 rounded-xl">
-                        <div>
-                            <p className="font-bold text-gray-800">Caja Mix Premium (Mensual)</p>
-                            <p className="text-sm text-gray-500">Próximo cobro: 15 de Diciembre, 2025</p>
-                        </div>
-                        <div className="flex gap-3 mt-4 sm:mt-0">
-                            <button className="px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100 rounded-lg transition">
-                                Cambiar Plan
-                            </button>
-                            <button className="px-4 py-2 text-sm font-medium text-red-600 border border-red-200 hover:bg-red-50 rounded-lg transition">
-                                Pausar
-                            </button>
-                        </div>
-                    </div>
-                </div>
 
-                {/* 2. Historial de Pedidos */}
-                <div className="bg-white rounded-2xl shadow-sm p-8 border border-gray-100">
-                    <h3 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
-                        <FaBoxOpen className="text-amber-600" /> Historial de Pedidos
-                    </h3>
-
-                    {user?.orders && user.orders.length > 0 ? (
-                        <div className="space-y-4">
+                    {!user?.orders || user.orders.length === 0 ? (
+                        <div className="text-center py-16 text-gray-400">
+                            <FaBoxOpen size={48} className="mx-auto mb-4 opacity-20" />
+                            <p>Aún no has realizado compras.</p>
+                            <a href="/productos" className="text-amber-600 font-bold hover:underline mt-2 inline-block">Ir a la tienda</a>
+                        </div>
+                    ) : (
+                        <div className="divide-y divide-gray-100">
                             {user.orders.map((order) => (
-                                <div key={order.id} className="border-b border-gray-100 pb-4 last:border-0 last:pb-0">
-                                    <div className="flex justify-between items-start mb-2">
-                                        <div>
-                                            <p className="font-bold text-gray-800">Pedido #{order.id}</p>
-                                            <p className="text-xs text-gray-500">{new Date(order.createdAt).toLocaleDateString()}</p>
+                                <div key={order.id} className="p-6 hover:bg-gray-50 transition flex flex-col md:flex-row justify-between md:items-center gap-4">
+                                    <div className="flex-grow">
+                                        <div className="flex items-center gap-3 mb-1">
+                                            <span className="font-bold text-gray-900">Pedido #{order.id}</span>
+                                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                                                order.status === 'pagado' 
+                                                ? 'bg-green-100 text-green-700' 
+                                                : 'bg-yellow-100 text-yellow-700'
+                                            }`}>
+                                                {order.status}
+                                            </span>
                                         </div>
-                                        <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                                            order.status === 'pagado' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
-                                        }`}>
-                                            {order.status.toUpperCase()}
-                                        </span>
+                                        <p className="text-sm text-gray-500 mb-1">
+                                            {new Date(order.createdAt).toLocaleDateString('es-CL', { year: 'numeric', month: 'long', day: 'numeric' })}
+                                        </p>
+                                        <p className="text-sm text-gray-700 font-medium">{order.description || "Suscripción / Productos Varios"}</p>
                                     </div>
-                                    <p className="text-sm text-gray-600">Total: ${order.total.toLocaleString('es-CL')}</p>
+                                    
+                                    <div className="text-right">
+                                        <p className="text-lg font-bold text-gray-900">${order.total.toLocaleString('es-CL')}</p>
+                                        <button className="text-xs text-amber-700 font-bold hover:underline mt-1">Ver Boleta</button>
+                                    </div>
                                 </div>
                             ))}
                         </div>
-                    ) : (
-                        <div className="text-center py-8 text-gray-400">
-                            <p>Aún no tienes pedidos registrados.</p>
-                            {/* Truco visual: Mostramos uno falso si no hay, para que el profe vea como se vería */}
-                            <div className="mt-4 opacity-50 border-t pt-4">
-                                <p className="text-xs italic">(Ejemplo de visualización)</p>
-                                <div className="flex justify-between mt-2">
-                                    <span className="font-bold">Pedido #999</span>
-                                    <span className="bg-green-100 text-green-800 px-2 rounded text-xs">PAGADO</span>
-                                </div>
-                            </div>
-                        </div>
                     )}
                 </div>
-
             </div>
         </div>
       </main>

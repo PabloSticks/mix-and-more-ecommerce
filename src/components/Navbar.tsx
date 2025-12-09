@@ -34,6 +34,8 @@ export default function Navbar() {
           <li><Link href="/" className="hover:text-amber-600 transition">Inicio</Link></li>
           <li><Link href="/productos" className="hover:text-amber-600 transition">Productos</Link></li>
           <li><Link href="/recomendaciones" className="hover:text-amber-600 transition">Recomendaciones</Link></li>
+          {/* LINK DE SUSCRIPCIONES */}
+          <li><Link href="/suscripciones" className="text-amber-700 font-bold hover:text-amber-800 transition">Suscripciones</Link></li>
         </ul>
 
         {/* ZONA DERECHA (Carrito + Usuario) */}
